@@ -1,0 +1,72 @@
+@page "/Account/ExternalLogin"
+
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using FileFlowHR.Infrastructure.Identity
+
+@inject SignInManager<UserAccount> SignInManager
+@inject ExternalLoginService ExternalLogins
+@inject IdentityRedirectManager RedirectManager
+@inject ILogger<ExternalLogin> Logger
+
+<PageTitle>Signing in</PageTitle>
+
+<div class="auth-card">
+    <h1 class="h4">We could not sign you in</h1>
+    <StatusMessage Message="@message" />
+    <a class="btn btn-primary mt-3" href="Account/Login">Back to sign in</a>
+</div>
+
+@code {
+    public const string LoginCallbackAction = "LoginCallback";
+
+    private string? message;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? RemoteError { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? Action { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (RemoteError is not null)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", $"Error from your company login: {RemoteError}", HttpContext);
+            return;
+        }
+
+        var info = await SignInManager.GetExternalLoginInfoAsync();
+        if (info is null || Action != LoginCallbackAction)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", "Error: The company login did not return any details.", HttpContext);
+            return;
+        }
+
+        // Only people HR has already added can get in; the first visit links their company identity.
+        var result = await ExternalLogins.SignInAsync(info);
+        switch (result.Outcome)
+        {
+            case ExternalSignInOutcome.SignedIn:
+                Logger.LogInformation("{Email} signed in with {Provider}.", result.Email, info.LoginProvider);
+                RedirectManager.RedirectTo(ReturnUrl);
+                return;
+            case ExternalSignInOutcome.NoAccount:
+                message = $"Error: {result.Email ?? "Your account"} is not set up in FileFlowHR for {result.CompanyName}. Ask your HR team to add you.";
+                break;
+            case ExternalSignInOutcome.Disabled:
+                message = "Error: Your FileFlowHR access has been switched off. Contact your HR team.";
+                break;
+            default:
+                message = "Error: Sign-in failed. Please try again.";
+                break;
+        }
+        await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+    }
+}

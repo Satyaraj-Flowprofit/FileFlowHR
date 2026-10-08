@@ -1,0 +1,130 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = Permissions.RolesManage)]
+@inherits HrComponentBase
+
+<PageTitle>Roles</PageTitle>
+<PageHeader Title="Roles" Subtitle="Extra access given to people. Employee, manager and applicant access is automatic and not listed here." />
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+<div class="panel">
+    <h2>Give a role</h2>
+    <div class="form-grid">
+        <div>
+            <label class="form-label">Person</label>
+            <select class="form-select" @bind="personId">
+                <option value="0">Choose a member of staff…</option>
+                @foreach (var p in staff) { <option value="@p.Id">@p.Name</option> }
+            </select>
+        </div>
+        <div>
+            <label class="form-label">Role</label>
+            <select class="form-select" @bind="role">
+                <option value="@GrantableRole.ClientAdmin">Client admin (settings, users, roles)</option>
+                <option value="@GrantableRole.HrAdmin">HR admin (org and people)</option>
+                <option value="@GrantableRole.Recruiter">Recruiter (postings, applications)</option>
+                <option value="@GrantableRole.Auditor">Auditor (read only)</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label">For</label>
+            <select class="form-select" @bind="scopeType" @bind:after="() => scopeId = 0">
+                <option value="@ScopeType.Company">The whole company</option>
+                <option value="@ScopeType.Region">One region</option>
+                <option value="@ScopeType.BusinessUnit">One business unit</option>
+            </select>
+        </div>
+        @if (scopeType == ScopeType.Region)
+        {
+            <div>
+                <label class="form-label">Region</label>
+                <select class="form-select" @bind="scopeId">
+                    <option value="0">Choose…</option>
+                    @foreach (var r in regions) { <option value="@r.Id">@r.Name</option> }
+                </select>
+            </div>
+        }
+        @if (scopeType == ScopeType.BusinessUnit)
+        {
+            <div>
+                <label class="form-label">Business unit</label>
+                <select class="form-select" @bind="scopeId">
+                    <option value="0">Choose…</option>
+                    @foreach (var b in units) { <option value="@b.Id">@b.Name</option> }
+                </select>
+            </div>
+        }
+        <div><label class="form-label">From</label><input type="date" class="form-control" @bind="from" /></div>
+        <div><label class="form-label">Until (optional)</label><input type="date" class="form-control" @bind="to" /></div>
+    </div>
+    <div class="actions-row"><button class="btn btn-primary" disabled="@Busy" @onclick="Grant">Give role</button></div>
+    <p class="muted small mt-2 mb-0">The person sees the change the next time they sign in.</p>
+</div>
+
+<div class="toolbar">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="ended" @bind="includeEnded" @bind:after="Load" />
+        <label class="form-check-label" for="ended">Show ended roles</label>
+    </div>
+</div>
+
+<div class="panel table-wrap">
+    <table class="table">
+        <thead><tr><th>Person</th><th>Role</th><th>For</th><th>Period</th><th>Given by</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var g in grants)
+            {
+                <tr>
+                    <td><a href="people/@g.PersonId">@g.PersonName</a></td>
+                    <td>@g.RoleName</td>
+                    <td>@g.ScopeName</td>
+                    <td>@Period(g.From, g.To)</td>
+                    <td>@(g.GrantedByName ?? "Set up")</td>
+                    <td class="text-end">
+                        @if (g.To is null || g.To > DateOnly.FromDateTime(DateTime.Today))
+                        {
+                            <button class="btn btn-sm btn-outline-danger" disabled="@Busy" @onclick="() => End(g.Id)">End today</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private IReadOnlyList<RoleGrantRow> grants = [];
+    private IReadOnlyList<PersonRow> staff = [];
+    private IReadOnlyList<RegionDto> regions = [];
+    private IReadOnlyList<BusinessUnitDto> units = [];
+    private bool includeEnded;
+    private long personId, scopeId;
+    private GrantableRole role = GrantableRole.Recruiter;
+    private ScopeType scopeType = ScopeType.Company;
+    private DateOnly from = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? to;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        var p = await Send(new ListPeopleQuery(null, PeopleFilter.Employees)); if (p.Succeeded) staff = p.Value!;
+        var r = await Send(new ListRegionsQuery()); if (r.Succeeded) regions = r.Value!;
+        var b = await Send(new ListBusinessUnitsQuery()); if (b.Succeeded) units = b.Value!;
+    }
+
+    private async Task Load()
+    {
+        var result = await Send(new ListRoleGrantsQuery(includeEnded));
+        if (result.Succeeded) grants = result.Value!;
+    }
+
+    private async Task Grant()
+    {
+        var result = await Send(new GrantRoleCommand(personId, role, scopeType, scopeType == ScopeType.Company ? null : scopeId, from, to), "Role given.");
+        if (result.Succeeded) { personId = 0; await Load(); }
+    }
+
+    private async Task End(long id)
+    {
+        if ((await Send(new EndRoleGrantCommand(id, DateOnly.FromDateTime(DateTime.Today)), "Role ended.")).Succeeded) await Load();
+    }
+}

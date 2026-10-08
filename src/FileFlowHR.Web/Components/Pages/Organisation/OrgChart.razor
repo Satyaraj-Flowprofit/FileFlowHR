@@ -1,0 +1,74 @@
+@page "/org-chart"
+@attribute [Authorize(Policy = Permissions.OrgView)]
+@inherits HrComponentBase
+
+<PageTitle>Org chart</PageTitle>
+<PageHeader Title="Org chart" Subtitle="Built from positions and their solid reporting lines. Pick a past date to see how it looked then." />
+<Alerts Error="@ErrorMessage" />
+
+<div class="toolbar">
+    <label class="form-label mb-0">As of</label>
+    <input type="date" class="form-control" @bind="asOf" @bind:after="Load" />
+    <button class="btn btn-sm btn-outline-secondary" @onclick="Today">Today</button>
+</div>
+
+<div class="panel org-canvas">
+    @if (roots.Count == 0) { <p class="muted mb-0">No positions on this date.</p> }
+    <ul class="org-tree">
+        @foreach (var node in roots) { @RenderNode(node) }
+    </ul>
+</div>
+
+@code {
+    private IReadOnlyList<OrgChartNode> roots = [];
+    private DateOnly asOf = DateOnly.FromDateTime(DateTime.Today);
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Today() { asOf = DateOnly.FromDateTime(DateTime.Today); await Load(); }
+
+    private async Task Load()
+    {
+        var result = await Send(new GetOrgChartQuery(asOf));
+        if (result.Succeeded) roots = result.Value!;
+    }
+
+    private readonly HashSet<long> collapsed = [];
+
+    private void Toggle(long id) { if (!collapsed.Remove(id)) collapsed.Add(id); }
+
+    private static string Initials(string? name)
+    {
+        var parts = (name ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 0 ? "?" : string.Concat(parts.Take(2).Select(w => char.ToUpperInvariant(w[0])));
+    }
+
+    private RenderFragment RenderNode(OrgChartNode node) => __builder =>
+    {
+        var p = node.Position;
+        var isCollapsed = collapsed.Contains(p.Id);
+        <li>
+            <div class="org-card @(p.IsVacant ? "vacant" : "")">
+                <a class="org-link" href="positions/@p.Id" title="@p.Code · @p.BusinessUnit">
+                    <span class="org-avatar @(p.IsVacant ? "vacant" : "")">@(p.IsVacant ? "+" : Initials(p.HolderName))</span>
+                    <span class="org-name">@(p.IsVacant ? "Vacant" : p.HolderName)</span>
+                    <span class="org-title">@p.Title</span>
+                    <span class="org-unit">@p.BusinessUnit</span>
+                </a>
+                @if (node.Reports.Count > 0)
+                {
+                    <button type="button" class="org-toggle" @onclick="() => Toggle(p.Id)"
+                            title="@(isCollapsed ? "Show" : "Hide") direct reports">
+                        @node.Reports.Count <span>@(isCollapsed ? "▾" : "▴")</span>
+                    </button>
+                }
+            </div>
+            @if (node.Reports.Count > 0 && !isCollapsed)
+            {
+                <ul>
+                    @foreach (var child in node.Reports) { @RenderNode(child) }
+                </ul>
+            }
+        </li>
+    };
+}

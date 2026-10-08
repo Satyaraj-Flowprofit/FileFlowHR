@@ -1,0 +1,14 @@
+<span class="badge-status badge-@Kind">@Text</span>
+
+@code {
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+
+    private string Kind => Text.ToLowerInvariant() switch
+    {
+        "open" or "active" or "hired" or "primary" or "current" => "good",
+        "draft" or "invited" or "submitted" or "screening" or "interview" or "offer" or "interim" => "info",
+        "closed" or "filled" or "ended" or "withdrawn" => "muted",
+        "disabled" or "rejected" or "vacant" => "warn",
+        _ => "muted",
+    };
+}

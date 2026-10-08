@@ -1,0 +1,75 @@
+@inherits LayoutComponentBase
+@using System.Security.Claims
+@using FileFlowHR.Application.Common.Security
+@inject NavigationManager Navigation
+
+<AuthorizeView>
+    <Authorized>
+        <div class="app-shell">
+            <header class="app-topbar">
+                <a class="topbar-brand" href=""><span class="brand-mark" aria-hidden="true">F</span>FileFlowHR</a>
+                <div class="company">
+                    <span class="company-dot" aria-hidden="true"></span>
+                    @context.User.FindFirst(HrClaims.CompanyName)?.Value
+                </div>
+                <div class="user">
+                    <div class="user-text">
+                        <a href="Account/Manage" class="user-name">@context.User.FindFirst(HrClaims.DisplayName)?.Value</a>
+                        <span class="user-roles">@RoleSummary(context.User)</span>
+                    </div>
+                    <a href="Account/Manage" class="avatar" title="My sign-in">@Initials(context.User.FindFirst(HrClaims.DisplayName)?.Value)</a>
+                    <form action="Account/Logout" method="post" class="d-inline">
+                        <AntiforgeryToken />
+                        <input type="hidden" name="ReturnUrl" value="" />
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Sign out</button>
+                    </form>
+                </div>
+            </header>
+            <div class="app-body">
+                <aside class="app-sidebar">
+                    <NavMenu />
+                </aside>
+                <main class="app-content">
+                    @Body
+                </main>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="public-shell">
+            <header class="public-topbar">
+                <a class="brand" href="">FileFlowHR</a>
+                <a class="btn btn-sm btn-outline-primary" href="Account/Login">Sign in</a>
+            </header>
+            <main class="public-content">
+                @Body
+            </main>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Something went wrong. <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (AuthState is null) return;
+        var user = (await AuthState).User;
+        var path = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        // Company requires MFA and this password account has not set it up yet.
+        if (user.HasClaim(HrClaims.MfaRequired, "true") && !path.StartsWith("/Account", StringComparison.OrdinalIgnoreCase))
+            Navigation.NavigateTo("Account/Manage/EnableAuthenticator", forceLoad: true);
+    }
+
+    private static string Initials(string? name) =>
+        string.Concat((name ?? "?").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
+
+    private static string RoleSummary(ClaimsPrincipal user) => string.Join(", ",
+        user.FindAll(RoleAssignment.ClaimType).Select(c => RoleAssignment.Parse(c.Value)).OfType<RoleAssignment>()
+            .Select(r => Roles.DisplayName(r.Role)).Distinct());
+}

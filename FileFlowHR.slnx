@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FileFlowHR.Application/FileFlowHR.Application.csproj" />
+    <Project Path="src/FileFlowHR.Domain/FileFlowHR.Domain.csproj" />
+    <Project Path="src/FileFlowHR.Infrastructure/FileFlowHR.Infrastructure.csproj" />
+    <Project Path="src/FileFlowHR.Web/FileFlowHR.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FileFlowHR.Tests/FileFlowHR.Tests.csproj" />
+  </Folder>
+</Solution>

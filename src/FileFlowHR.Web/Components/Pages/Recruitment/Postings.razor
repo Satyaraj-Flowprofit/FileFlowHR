@@ -1,0 +1,46 @@
+@page "/postings"
+@attribute [Authorize(Policy = Permissions.PostingsManage)]
+@inherits HrComponentBase
+
+<PageTitle>Job postings</PageTitle>
+<PageHeader Title="Job postings" Subtitle="Advertise a vacant position to staff, the public, or both.">
+    <Actions><a class="btn btn-primary" href="postings/new">New posting</a></Actions>
+</PageHeader>
+<Alerts Error="@ErrorMessage" />
+
+<div class="panel table-wrap">
+    <table class="table table-hover">
+        <thead><tr><th>Title</th><th>Position</th><th>Shown to</th><th>Open</th><th>Status</th><th class="text-end">Applications</th></tr></thead>
+        <tbody>
+            @foreach (var p in postings)
+            {
+                <tr>
+                    <td><a href="postings/@p.Id">@p.Title</a></td>
+                    <td><a href="positions/@p.PositionId">@p.PositionCode</a></td>
+                    <td>@VisibilityText(p.Visibility)</td>
+                    <td>@Period(p.OpenDate, p.CloseDate)</td>
+                    <td><StatusBadge Text="@p.Status" /></td>
+                    <td class="text-end">@p.Active active / @p.Applications total</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (postings.Count == 0) { <p class="muted mb-0">No postings yet.</p> }
+</div>
+
+@code {
+    private IReadOnlyList<PostingRow> postings = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Send(new ListPostingsQuery());
+        if (result.Succeeded) postings = result.Value!;
+    }
+
+    public static string VisibilityText(string visibility) => visibility.ToLowerInvariant() switch
+    {
+        "internal" => "Staff only",
+        "external" => "Public only",
+        _ => "Staff and public",
+    };
+}

@@ -1,0 +1,82 @@
+@page "/careers/{Company}/register"
+@using System.ComponentModel.DataAnnotations
+@inherits HrComponentBase
+@inject IWebHostEnvironment Environment
+
+<PageTitle>Create an account</PageTitle>
+
+<div class="auth-card">
+    @if (done)
+    {
+        <h1 class="h3">Check your email</h1>
+        <p>We sent a link to <strong>@Input.Email</strong>. Confirm your email, then sign in to apply.</p>
+        @if (Environment.IsDevelopment())
+        {
+            <p class="muted small">Running locally: emails are not sent. Open the <a href="dev/mailbox">email outbox</a> to click the link.</p>
+        }
+        <a class="btn btn-primary w-100" href="@LoginLink">Go to sign in</a>
+    }
+    else
+    {
+        <h1 class="h3">Create an account</h1>
+        <p class="text-secondary">To apply for jobs at this company. Staff should sign in instead.</p>
+        <Alerts Error="@ErrorMessage" />
+        <EditForm Model="Input" FormName="register-applicant" OnValidSubmit="Register" method="post">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="row g-2">
+                <div class="col-sm-6 form-floating mb-3">
+                    <InputText @bind-Value="Input.FirstName" id="Input.FirstName" class="form-control" placeholder="First name" />
+                    <label for="Input.FirstName">First name</label>
+                </div>
+                <div class="col-sm-6 form-floating mb-3">
+                    <InputText @bind-Value="Input.LastName" id="Input.LastName" class="form-control" placeholder="Last name" />
+                    <label for="Input.LastName">Last name</label>
+                </div>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" placeholder="name@example.com" />
+                <label for="Input.Email">Email</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="new-password" placeholder="password" />
+                <label for="Input.Password">Password (10+ characters)</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.ConfirmPassword" id="Input.ConfirmPassword" class="form-control" autocomplete="new-password" placeholder="password" />
+                <label for="Input.ConfirmPassword">Confirm password</label>
+            </div>
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Create account</button>
+        </EditForm>
+        <p class="mt-3 mb-0 small">Already registered? <a href="@LoginLink">Sign in</a></p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Company { get; set; } = "";
+    [SupplyParameterFromQuery(Name = "job")] public long? Job { get; set; }
+    [SupplyParameterFromForm] private InputModel Input { get; set; } = default!;
+    private bool done;
+
+    private string LoginLink => Job is { } id
+        ? $"Account/Login?company={Company}&ReturnUrl={Uri.EscapeDataString($"careers/{Company}/jobs/{id}")}"
+        : $"Account/Login?company={Company}";
+
+    protected override void OnInitialized() => Input ??= new();
+
+    private async Task Register()
+    {
+        var result = await Send(new RegisterApplicantCommand(Company, Input.FirstName, Input.LastName, Input.Email, Input.Password));
+        done = result.Succeeded;
+    }
+
+    private sealed class InputModel
+    {
+        [Required, Display(Name = "First name")] public string FirstName { get; set; } = "";
+        [Required, Display(Name = "Last name")] public string LastName { get; set; } = "";
+        [Required, EmailAddress] public string Email { get; set; } = "";
+        [Required, StringLength(100, MinimumLength = 10, ErrorMessage = "Use at least 10 characters.")]
+        [DataType(DataType.Password)] public string Password { get; set; } = "";
+        [Compare(nameof(Password), ErrorMessage = "The passwords do not match.")] public string ConfirmPassword { get; set; } = "";
+    }
+}

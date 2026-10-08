@@ -1,0 +1,50 @@
+@page "/jobs"
+@attribute [Authorize(Policy = Permissions.JobsBrowse)]
+@inherits HrComponentBase
+
+<PageTitle>Find jobs</PageTitle>
+<PageHeader Title="Find jobs" Subtitle="Open roles at your company that you can apply for." />
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+@if (jobs.Count == 0) { <p class="muted">No open jobs right now.</p> }
+<div class="job-list">
+@foreach (var job in jobs)
+{
+    <div class="job-card">
+        <h3>@job.Title</h3>
+        <div class="job-meta">
+            <span class="job-chip">@job.BusinessUnit</span>
+            @if (job.Location is not null) { <span class="job-chip">@job.Location</span> }
+            <span class="job-chip">Open @Period(job.OpenDate, job.CloseDate)</span>
+        </div>
+        <p>@job.Description</p>
+        <div class="job-footer">
+            @if (job.AlreadyApplied)
+            {
+                <StatusBadge Text="Submitted" /> <span class="muted small">You have applied.</span>
+            }
+            else
+            {
+                <button class="btn btn-sm btn-primary" disabled="@Busy" @onclick="() => Apply(job.Id)">Apply</button>
+            }
+        </div>
+    </div>
+}
+</div>
+
+@code {
+    private IReadOnlyList<JobDetail> jobs = [];
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        var result = await Send(new ListInternalJobsQuery());
+        if (result.Succeeded) jobs = result.Value!;
+    }
+
+    private async Task Apply(long jobId)
+    {
+        if ((await Send(new ApplyForJobCommand(jobId), "Application sent. Track it under My applications.")).Succeeded) await Load();
+    }
+}

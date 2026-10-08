@@ -1,0 +1,79 @@
+@page "/careers/{Company}/jobs/{JobId:long}"
+@inherits HrComponentBase
+
+<PageTitle>@(job?.Title ?? "Job")</PageTitle>
+
+@if (job is null)
+{
+    <h1>Job not found</h1>
+    <p class="muted">This job is closed or does not exist. <a href="careers/@Company">See open jobs</a>.</p>
+}
+else
+{
+    <p><a href="careers/@Company">← All jobs</a></p>
+    <PageHeader Title="@job.Title" Subtitle="@($"{job.BusinessUnit}{(job.Location is null ? "" : " · " + job.Location)} · posted {Date(job.OpenDate)}")" />
+    <Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+    <div class="panel">
+        <p style="white-space: pre-line">@job.Description</p>
+    </div>
+
+    <div class="panel">
+        @if (job.AlreadyApplied)
+        {
+            <p class="mb-2"><StatusBadge Text="Submitted" /> You have applied for this job.</p>
+            <a href="my-applications">Track my applications</a>
+        }
+        else if (signedInHere)
+        {
+            <form method="post" @onsubmit="Apply" @formname="apply">
+                <AntiforgeryToken />
+                <button type="submit" class="btn btn-primary">Apply now</button>
+            </form>
+        }
+        else if (signedInElsewhere)
+        {
+            <p class="mb-0">You are signed in to another company. Sign out to apply here.</p>
+        }
+        else
+        {
+            <h2>Apply</h2>
+            <p>Sign in or create a free account to apply. You can then track your application.</p>
+            <a class="btn btn-primary" href="careers/@Company/register?job=@JobId">Create an account</a>
+            <a class="btn btn-outline-secondary" href="@($"Account/Login?company={Company}&ReturnUrl={Uri.EscapeDataString($"careers/{Company}/jobs/{JobId}")}")">I already have one</a>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public string Company { get; set; } = "";
+    [Parameter] public long JobId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private JobDetail? job;
+    private bool signedInHere, signedInElsewhere;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await AuthState).User;
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            var sameCompany = string.Equals(user.FindFirst(HrClaims.CompanyCode)?.Value, Company, StringComparison.OrdinalIgnoreCase);
+            signedInHere = sameCompany && FileFlowHR.Web.Security.PermissionPolicies.Has(user, Permissions.OwnApplications);
+            signedInElsewhere = !sameCompany;
+        }
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var result = await Send(new GetPublicJobQuery(Company, JobId));
+        job = result.Succeeded ? result.Value : null;
+    }
+
+    private async Task Apply()
+    {
+        if (!signedInHere) return;
+        if ((await Send(new ApplyForJobCommand(JobId), "Thanks, your application has been sent.")).Succeeded) await Load();
+    }
+}

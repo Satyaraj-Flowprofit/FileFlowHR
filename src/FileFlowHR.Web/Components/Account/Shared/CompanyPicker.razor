@@ -1,0 +1,27 @@
+@using FileFlowHR.Application.Common.Messaging
+@using FileFlowHR.Application.Features.Companies
+@inject IDispatcher Dispatcher
+
+@* Locally there are no company web addresses (acme.fileflowhr...), so sign-in pages ask for the company. *@
+<div class="form-floating mb-3">
+    <select name="@Name" id="@Name" class="form-select" aria-required="true">
+        @foreach (var c in companies)
+        {
+            <option value="@c.Code" selected="@(string.Equals(c.Code, Value, StringComparison.OrdinalIgnoreCase))">@c.Name</option>
+        }
+    </select>
+    <label for="@Name" class="form-label">Company</label>
+</div>
+
+@code {
+    private IReadOnlyList<CompanyListItem> companies = [];
+
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Dispatcher.Send(new ListCompaniesQuery());
+        companies = result.Value ?? [];
+    }
+}

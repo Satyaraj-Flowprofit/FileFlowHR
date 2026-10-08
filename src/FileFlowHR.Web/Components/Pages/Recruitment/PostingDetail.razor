@@ -1,0 +1,167 @@
+@page "/postings/new"
+@page "/postings/{Id:long}"
+@attribute [Authorize(Policy = Permissions.PostingsManage)]
+@inherits HrComponentBase
+
+<PageTitle>@(Id is null ? "New posting" : form.Title)</PageTitle>
+<PageHeader Title="@(Id is null ? "New posting" : form.Title)" Subtitle="@(Id is null ? "Starts as a draft. Publish when it is ready." : null)">
+    <Actions>
+        @if (status is PostingStatus.Draft)
+        {
+            <button class="btn btn-success" disabled="@Busy" @onclick="() => Change(PostingAction.Publish)">Publish</button>
+        }
+        @if (status is PostingStatus.Open)
+        {
+            <button class="btn btn-outline-danger" disabled="@Busy" @onclick="() => Change(PostingAction.Close)">Close posting</button>
+        }
+        <a class="btn btn-outline-secondary" href="postings">Back</a>
+    </Actions>
+</PageHeader>
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+<div class="panel">
+    <h2>Posting @if (status is { } s) { <StatusBadge Text="@s.ToString()" /> }</h2>
+    <div class="form-grid">
+        <div>
+            <label class="form-label">Position</label>
+            <select class="form-select" @bind="form.PositionId" disabled="@(Id is not null)">
+                <option value="0">Choose a vacant position…</option>
+                @foreach (var p in positions) { <option value="@p.Id">@p.Title (@p.Code)</option> }
+            </select>
+        </div>
+        <div><label class="form-label">Title</label><input class="form-control" @bind="form.Title" /></div>
+        <div>
+            <label class="form-label">Shown to</label>
+            <select class="form-select" @bind="form.Visibility">
+                <option value="@PostingVisibility.Internal">Staff only</option>
+                <option value="@PostingVisibility.External">Public only</option>
+                <option value="@PostingVisibility.Both">Staff and public</option>
+            </select>
+        </div>
+        <div><label class="form-label">Opens</label><input type="date" class="form-control" @bind="form.OpenDate" /></div>
+        <div><label class="form-label">Closes (optional)</label><input type="date" class="form-control" @bind="form.CloseDate" /></div>
+    </div>
+    <div class="mt-3">
+        <label class="form-label">Description</label>
+        <textarea class="form-control" rows="5" @bind="form.Description"></textarea>
+    </div>
+    @if (status is null or PostingStatus.Draft or PostingStatus.Open)
+    {
+        <div class="actions-row"><button class="btn btn-primary" disabled="@Busy" @onclick="Save">Save</button></div>
+    }
+</div>
+
+@if (Id is not null)
+{
+    <div class="panel">
+        <h2>Applications</h2>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Applicant</th><th>From</th><th>Applied</th><th>Status</th><th>Move to</th></tr></thead>
+                <tbody>
+                    @foreach (var a in applications)
+                    {
+                        <tr>
+                            <td><a href="people/@a.PersonId">@a.PersonName</a><div class="muted small">@a.Email</div></td>
+                            <td>@(a.Source == "Internal" ? "Staff" : "Public")</td>
+                            <td>@Date(a.AppliedAt)</td>
+                            <td><StatusBadge Text="@a.Status.ToString()" /></td>
+                            <td>
+                                @foreach (var next in a.NextSteps.Where(n => n != ApplicationStatus.Hired && n != ApplicationStatus.Withdrawn))
+                                {
+                                    <button class="btn btn-sm btn-outline-secondary me-1 mb-1" disabled="@Busy" @onclick="() => Move(a.Id, next)">@next</button>
+                                }
+                                @if (a.NextSteps.Contains(ApplicationStatus.Hired))
+                                {
+                                    <button class="btn btn-sm btn-success mb-1" @onclick="() => hireId = a.Id">Hire…</button>
+                                }
+                            </td>
+                        </tr>
+                        @if (hireId == a.Id)
+                        {
+                            <tr>
+                                <td colspan="5">
+                                    <div class="form-grid">
+                                        <div><label class="form-label">Start date</label><input type="date" class="form-control" @bind="hireDate" /></div>
+                                        <div>
+                                            <label class="form-label">Type</label>
+                                            <select class="form-select" @bind="hireType">
+                                                @foreach (var t in Enum.GetValues<EmploymentType>()) { <option value="@t">@Words(t)</option> }
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <button class="btn btn-success" disabled="@Busy" @onclick="() => Hire(a.Id)">Confirm hire</button>
+                                            <button class="btn btn-link" @onclick="() => hireId = null">Cancel</button>
+                                        </div>
+                                    </div>
+                                    <p class="muted small mt-2 mb-0">Creates the employment, puts them in the position, marks the posting filled, and makes their login a staff login.</p>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (applications.Count == 0) { <p class="muted mb-0">No applications yet.</p> }
+    </div>
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private sealed class PostingForm
+    {
+        public long PositionId; public string Title = ""; public string Description = "";
+        public PostingVisibility Visibility = PostingVisibility.Both;
+        public DateOnly OpenDate = DateOnly.FromDateTime(DateTime.Today); public DateOnly? CloseDate;
+    }
+
+    private PostingForm form = new();
+    private PostingStatus? status;
+    private IReadOnlyList<PositionRow> positions = [];
+    private IReadOnlyList<ApplicationRow> applications = [];
+    private long? hireId;
+    private DateOnly hireDate = DateOnly.FromDateTime(DateTime.Today);
+    private EmploymentType hireType = EmploymentType.FullTime;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Load();
+        var list = await Send(new ListPositionsQuery());
+        if (list.Succeeded) positions = list.Value!.Where(p => p.IsVacant || p.Id == form.PositionId).ToList();
+    }
+
+    private async Task Load()
+    {
+        if (Id is not { } id) return;
+        var result = await Send(new ListApplicationsQuery(id));
+        if (!result.Succeeded) return;
+        var p = result.Value!.Posting;
+        form = new() { PositionId = p.PositionId, Title = p.Title, Description = p.Description, Visibility = p.Visibility, OpenDate = p.OpenDate, CloseDate = p.CloseDate };
+        status = p.Status;
+        applications = result.Value.Applications;
+    }
+
+    private async Task Save()
+    {
+        var result = await Send(new SavePostingCommand(Id, form.PositionId, form.Title, form.Description, form.Visibility, form.OpenDate, form.CloseDate), "Posting saved.");
+        if (!result.Succeeded) return;
+        if (Id is null) Navigation.NavigateTo($"postings/{result.Value}");
+        else await Load();
+    }
+
+    private async Task Change(PostingAction action)
+    {
+        if ((await Send(new ChangePostingStatusCommand(Id!.Value, action), action == PostingAction.Publish ? "Published." : "Posting closed.")).Succeeded) await Load();
+    }
+
+    private async Task Move(long applicationId, ApplicationStatus next)
+    {
+        if ((await Send(new MoveApplicationCommand(applicationId, next), $"Moved to {next}.")).Succeeded) await Load();
+    }
+
+    private async Task Hire(long applicationId)
+    {
+        if ((await Send(new HireApplicantCommand(applicationId, hireDate, hireType), "Hired. Welcome aboard!")).Succeeded) { hireId = null; await Load(); }
+    }
+}

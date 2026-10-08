@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+*.db
+*.db-shm
+*.db-wal
+TestResults/
+
+# Local secrets
+src/FileFlowHR.Web/appsettings.Development.json

@@ -1,0 +1,88 @@
+@page "/people"
+@attribute [Authorize(Policy = Permissions.PeopleView)]
+@inherits HrComponentBase
+
+<PageTitle>People</PageTitle>
+<PageHeader Title="People" Subtitle="Employees, applicants and former staff. One person record, whatever they are to the company.">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.PeopleManage">
+            <button class="btn btn-primary" @onclick="() => showNew = !showNew">Add person</button>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+@if (showNew)
+{
+    <div class="panel">
+        <h2>Add person</h2>
+        <div class="form-grid">
+            <div><label class="form-label">First name</label><input class="form-control" @bind="first" /></div>
+            <div><label class="form-label">Last name</label><input class="form-control" @bind="last" /></div>
+            <div><label class="form-label">Email</label><input type="email" class="form-control" @bind="email" /></div>
+            <div><label class="form-label">Phone</label><input class="form-control" @bind="phone" /></div>
+        </div>
+        <div class="actions-row">
+            <button class="btn btn-primary" disabled="@Busy" @onclick="Create">Add person</button>
+            <button class="btn btn-link" @onclick="() => showNew = false">Cancel</button>
+        </div>
+    </div>
+}
+
+<div class="toolbar">
+    <input class="form-control" placeholder="Search name, number or email" @bind="search" @bind:event="oninput" @bind:after="Load" />
+    <select class="form-select" @bind="Filter" @bind:after="Load">
+        @foreach (var f in Enum.GetValues<PeopleFilter>()) { <option value="@f">@f</option> }
+    </select>
+</div>
+
+<div class="panel table-wrap">
+    <table class="table table-hover">
+        <thead><tr><th>Number</th><th>Name</th><th>Email</th><th>Position</th><th>Status</th></tr></thead>
+        <tbody>
+            @foreach (var p in people)
+            {
+                <tr>
+                    <td>@p.PersonNumber</td>
+                    <td><a href="people/@p.Id">@p.Name</a></td>
+                    <td>@p.Email</td>
+                    <td>@p.PositionTitle</td>
+                    <td>
+                        @if (p.IsEmployee) { <StatusBadge Text="Active" /> }
+                        @if (p.IsFormer) { <StatusBadge Text="Ended" /> }
+                        @if (p.IsApplicant && !p.IsEmployee) { <StatusBadge Text="Submitted" /> <span class="muted small">applicant</span> }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (people.Count == 0) { <p class="muted mb-0">Nobody matches.</p> }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "filter")] public string? FilterParam { get; set; }
+    private PeopleFilter Filter = PeopleFilter.Everyone;
+    private IReadOnlyList<PersonRow> people = [];
+    private string? search;
+    private bool showNew;
+    private string first = "", last = "";
+    private string? email, phone;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Enum.TryParse<PeopleFilter>(FilterParam, true, out var f)) Filter = f;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var result = await Send(new ListPeopleQuery(search, Filter));
+        if (result.Succeeded) people = result.Value!;
+    }
+
+    private async Task Create()
+    {
+        var result = await Send(new SavePersonCommand(null, first, last, email, phone), "Person added.");
+        if (result.Succeeded) Navigation.NavigateTo($"people/{result.Value}");
+    }
+}

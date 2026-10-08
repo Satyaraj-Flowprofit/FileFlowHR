@@ -1,0 +1,27 @@
+@page "/dev/mailbox"
+@using FileFlowHR.Infrastructure.Email
+@attribute [ExcludeFromInteractiveRouting]
+@inject IWebHostEnvironment Environment
+@inject DevMailbox Outbox
+
+<PageTitle>Email outbox</PageTitle>
+
+@if (!Environment.IsDevelopment())
+{
+    <h1>Not available</h1>
+}
+else
+{
+    <PageHeader Title="Email outbox (local only)" Subtitle="Running locally, emails are kept here instead of being sent. Newest first. Click the links to accept invitations, confirm emails or reset passwords." />
+    @if (Outbox.Messages.Count == 0) { <p class="muted">No emails yet.</p> }
+    @foreach (var m in Outbox.Messages)
+    {
+        <div class="panel">
+            <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                <strong>@m.Subject</strong>
+                <span class="muted small">To @m.To · @m.SentAtUtc.ToLocalTime().ToString("d MMM HH:mm:ss")</span>
+            </div>
+            <div class="mailbox-body">@((MarkupString)m.HtmlBody)</div>
+        </div>
+    }
+}

@@ -1,0 +1,121 @@
+@page "/"
+@inherits HrComponentBase
+
+<PageTitle>FileFlowHR</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @if (dashboard is null)
+        {
+            <Alerts Error="@ErrorMessage" />
+            <p class="muted">Loading…</p>
+        }
+        else
+        {
+            <div class="welcome-banner">
+                <h1>Welcome, @dashboard.Name</h1>
+                <p>@DateTime.Today.ToString("dddd, d MMMM yyyy")</p>
+            </div>
+
+            <h2 class="section-title">Your Top Apps</h2>
+            <div class="app-tiles">
+                <AuthorizeView Policy="@Permissions.PeopleView" Context="_"><a class="app-tile" href="people"><span class="tile-icon" style="background:#0875e1">P</span>People</a></AuthorizeView>
+                <AuthorizeView Policy="@Permissions.OrgView" Context="_"><a class="app-tile" href="org-chart"><span class="tile-icon" style="background:#7a3fb5">O</span>Org chart</a></AuthorizeView>
+                <AuthorizeView Policy="@Permissions.OrgView" Context="_"><a class="app-tile" href="positions"><span class="tile-icon" style="background:#1a8f5c">Po</span>Positions</a></AuthorizeView>
+                <AuthorizeView Policy="@Permissions.PostingsManage" Context="_"><a class="app-tile" href="postings"><span class="tile-icon" style="background:#d9622b">R</span>Recruiting</a></AuthorizeView>
+                <AuthorizeView Policy="@Permissions.JobsBrowse" Context="_"><a class="app-tile" href="jobs"><span class="tile-icon" style="background:#0f7c90">J</span>Find jobs</a></AuthorizeView>
+                <AuthorizeView Policy="@Permissions.OwnApplications" Context="_"><a class="app-tile" href="my-applications"><span class="tile-icon" style="background:#b8467a">A</span>My applications</a></AuthorizeView>
+                <a class="app-tile" href="Account/Manage"><span class="tile-icon" style="background:#5b6673">S</span>My sign-in</a>
+            </div>
+
+            @if (dashboard.Stats is { } stats)
+            {
+                <h2 class="section-title">Overview</h2>
+                <div class="stat-grid">
+                    <a class="stat text-decoration-none text-reset" href="people?filter=Employees"><div class="value">@stats.Employees</div><div class="label">Employees</div></a>
+                    <a class="stat text-decoration-none text-reset" href="positions"><div class="value">@stats.OpenPositions</div><div class="label">Open positions</div></a>
+                    <a class="stat text-decoration-none text-reset" href="positions"><div class="value">@stats.VacantPositions</div><div class="label">Vacant positions</div></a>
+                    <a class="stat text-decoration-none text-reset" href="postings"><div class="value">@stats.OpenPostings</div><div class="label">Open job postings</div></a>
+                    <a class="stat text-decoration-none text-reset" href="postings"><div class="value">@stats.ActiveApplications</div><div class="label">Active applications</div></a>
+                </div>
+            }
+
+            <div class="two-col">
+                @if (dashboard.MyJob is { } job)
+                {
+                    <div class="panel">
+                        <h2>My job</h2>
+                        <dl class="dl-grid">
+                            <dt>Position</dt><dd>@job.PositionTitle <span class="muted">(@job.PositionCode)</span></dd>
+                            <dt>Business unit</dt><dd>@job.BusinessUnit</dd>
+                            <dt>Reports to</dt><dd>@(job.ManagerName ?? "Vacant") @if (job.ManagerTitle is not null) { <span class="muted">, @job.ManagerTitle</span> }</dd>
+                            @if (dashboard.TeamSize > 0)
+                            {
+                                <dt>My team</dt><dd>@dashboard.TeamSize direct report(s)</dd>
+                            }
+                        </dl>
+                    </div>
+                }
+                <div class="panel">
+                    <h2>Jobs</h2>
+                    <p class="mb-2">@dashboard.OpenInternalJobs job(s) open to apply for, and @dashboard.MyApplications application(s) of yours.</p>
+                    <div class="actions-row mt-0">
+                        <AuthorizeView Policy="@Permissions.JobsBrowse" Context="_">
+                            <a class="btn btn-sm btn-primary" href="jobs">Find jobs</a>
+                        </AuthorizeView>
+                        <AuthorizeView Policy="@Permissions.OwnApplications" Context="_">
+                            <a class="btn btn-sm btn-outline-primary" href="my-applications">My applications</a>
+                        </AuthorizeView>
+                    </div>
+                </div>
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div class="hero">
+            <h1>FileFlowHR</h1>
+            <p class="muted">Organisation, people and hiring for each company, in one place.</p>
+            <a class="btn btn-primary" href="Account/Login">Sign in</a>
+        </div>
+
+        <div class="panel">
+            <h2>Demo accounts (local only)</h2>
+            <p class="muted">Every demo account uses the password <code>@DemoPassword</code>. Pick the company on the sign-in page.</p>
+            <div class="table-wrap">
+                <table class="table demo-table">
+                    <thead><tr><th>Company</th><th>Email</th><th>Who they are</th><th>What they can do</th></tr></thead>
+                    <tbody>
+                        <tr><td>Acme</td><td>priya.nair@acme.com</td><td>HR Manager</td><td>Client admin and HR admin: everything</td></tr>
+                        <tr><td>Acme</td><td>sara.kim@acme.com</td><td>Sales Manager</td><td>Recruiter for Engineering, manager of her team</td></tr>
+                        <tr><td>Acme</td><td>david.chen@acme.com</td><td>VP Operations</td><td>Auditor for US East (read only), manager</td></tr>
+                        <tr><td>Acme</td><td>ravi.kumar@gmail.com</td><td>Software Engineer</td><td>Employee: own job, internal jobs</td></tr>
+                        <tr><td>Acme</td><td>tom.baker@outlook.com</td><td>Applicant</td><td>Applies to external jobs</td></tr>
+                        <tr><td>Acme</td><td>linda.park@gmail.com</td><td>Former employee</td><td>Login disabled, sign-in is refused</td></tr>
+                        <tr><td>Globex</td><td>jane.doe@globex.com</td><td>Admin</td><td>Sees only Globex data</td></tr>
+                        <tr><td>Globex</td><td>meena.iyer@gmail.com</td><td>Applicant</td><td>Applies to Globex jobs</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Public careers pages</h2>
+            <p class="mb-2">Anyone can browse open jobs and apply without being an employee.</p>
+            <a class="btn btn-sm btn-outline-primary me-2" href="careers/acme">Acme careers</a>
+            <a class="btn btn-sm btn-outline-primary" href="careers/globex">Globex careers</a>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private const string DemoPassword = FileFlowHR.Infrastructure.Seeding.DemoDataSeeder.DemoPassword;
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private DashboardDto? dashboard;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is null || (await AuthState).User.Identity?.IsAuthenticated != true) return;
+        var result = await Send(new GetDashboardQuery());
+        dashboard = result.Succeeded ? result.Value : null;
+    }
+}

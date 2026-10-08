@@ -1,0 +1,246 @@
+@page "/Account/Login"
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using FileFlowHR.Application.Common.Messaging
+@using FileFlowHR.Application.Features.Companies
+@using FileFlowHR.Infrastructure.Identity
+
+@inject UserManager<UserAccount> UserManager
+@inject SignInManager<UserAccount> SignInManager
+@inject IAuthenticationSchemeProvider Schemes
+@inject IDispatcher Dispatcher
+@inject ILogger<Login> Logger
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="auth-card">
+    <h1 class="h3 mb-1">Sign in to FileFlowHR</h1>
+    <p class="text-secondary mb-4">@(options?.CompanyName ?? "Enter your email to continue.")</p>
+
+    <StatusMessage Message="@errorMessage" />
+
+    @* Step 1: the company is worked out from the email address, so nobody has to pick it. *@
+    @if (options is null)
+    {
+        <EditForm Model="Identify" method="post" OnValidSubmit="IdentifyUser" FormName="identify">
+            <DataAnnotationsValidator />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Identify.Email" id="Identify.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="Identify.Email" class="form-label">Email</label>
+            </div>
+            @if (candidates.Count > 1)
+            {
+                <p class="small text-secondary">This email is registered with more than one company. Which one?</p>
+                <InputSelect @bind-Value="Identify.Company" class="form-select mb-3" aria-label="Company">
+                    @foreach (var c in candidates)
+                    {
+                        <option value="@c.Code">@c.Name</option>
+                    }
+                </InputSelect>
+            }
+            <button type="submit" class="w-100 btn btn-lg btn-primary">Continue</button>
+        </EditForm>
+    }
+    else
+    {
+        @foreach (var external in externalLogins)
+        {
+            <form action="Account/PerformExternalLogin" method="post" class="mb-2">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <button type="submit" class="w-100 btn btn-lg btn-primary" name="provider" value="@external.SchemeName">
+                    @external.DisplayName
+                </button>
+            </form>
+        }
+
+        @if (externalLogins.Count > 0)
+        {
+            <div class="divider"><span>@(options.StaffPasswordEnabled ? "or" : "Job applicants")</span></div>
+        }
+
+        <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+            <DataAnnotationsValidator />
+            <input type="hidden" name="Input.Company" value="@CompanyCode" />
+            <ValidationSummary class="text-danger" role="alert" />
+            <div class="form-floating mb-3">
+                <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                <label for="Input.Email" class="form-label">Email</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="password" />
+                <label for="Input.Password" class="form-label">Password</label>
+            </div>
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="Input.RememberMe" class="form-check-input" id="Input.RememberMe" />
+                <label class="form-check-label" for="Input.RememberMe">Keep me signed in</label>
+            </div>
+            <button type="submit" class="w-100 btn btn-lg @(externalLogins.Count > 0 ? "btn-outline-primary" : "btn-primary")">Sign in</button>
+        </EditForm>
+
+        <div class="mt-3 small">
+            <a href="Account/ForgotPassword?company=@CompanyCode">Forgot your password?</a>
+            <span class="text-secondary mx-1">·</span>
+            <a href="Account/Login">Use a different email</a>
+            <span class="text-secondary mx-1">·</span>
+            <a href="careers/@CompanyCode">Looking for a job? See open roles</a>
+        </div>
+    }
+</div>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+    private IReadOnlyList<CompanyListItem> candidates = [];
+    private LoginOptions? options;
+    private List<ExternalLoginOption> externalLogins = [];
+    private string? resolvedCompany;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "login")]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromForm(FormName = "identify")]
+    private IdentifyModel Identify { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    // Links from a company's careers page already know the company.
+    [SupplyParameterFromQuery(Name = "company")]
+    private string? CompanyQuery { get; set; }
+
+    private string CompanyCode => (resolvedCompany ?? Input.Company ?? CompanyQuery ?? "").ToLowerInvariant();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        Identify ??= new();
+        editContext = new EditContext(Input);
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            // Clear any half-finished company login.
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+
+        if (CompanyCode.Length > 0) await LoadCompany();
+    }
+
+    private async Task LoadCompany()
+    {
+        options = (await Dispatcher.Send(new GetLoginOptionsQuery(CompanyCode))).Value;
+        externalLogins = [];
+        if (options is null) return;
+        // Only offer company logins whose scheme is actually configured (secret present).
+        foreach (var option in options.ExternalLogins)
+            if (await Schemes.GetSchemeAsync(option.SchemeName) is not null) externalLogins.Add(option);
+    }
+
+    /// <summary>Works out which company an email belongs to: its company login domain first, then existing accounts.</summary>
+    private async Task IdentifyUser()
+    {
+        var email = Identify.Email.Trim();
+        var found = (await Dispatcher.Send(new FindCompaniesByEmailDomainQuery(email))).Value ?? [];
+        if (found.Count == 0)
+        {
+            // Applicants use any mail provider, so fall back to the companies where this email has an account.
+            var normalized = UserManager.NormalizeEmail(email);
+            var codes = (await UserManager.Users.Where(u => u.NormalizedEmail == normalized).Select(u => u.UserName!).ToListAsync())
+                .Select(n => n.Split(':')[0]).Distinct().ToHashSet();
+            found = ((await Dispatcher.Send(new ListCompaniesQuery())).Value ?? []).Where(c => codes.Contains(c.Code)).ToList();
+        }
+
+        if (found.Count == 0)
+        {
+            errorMessage = "Error: We couldn't find a FileFlowHR account for that email.";
+            return;
+        }
+
+        var pick = found.Count == 1 ? found[0] : found.FirstOrDefault(c => c.Code == Identify.Company);
+        if (pick is null)
+        {
+            candidates = found;
+            Identify.Company = found[0].Code;
+            return;
+        }
+
+        resolvedCompany = pick.Code;
+        Input.Email = email;
+        await LoadCompany();
+    }
+
+    public async Task LoginUser()
+    {
+        if (options is null || !editContext.Validate()) return;
+
+        var user = await UserManager.FindByNameAsync(UserAccount.MakeUserName(options.CompanyCode, Input.Email));
+        if (user is not null && user.UserType == UserTypes.Internal && !options.StaffPasswordEnabled)
+        {
+            errorMessage = $"Error: {options.CompanyName} staff sign in with the company button above.";
+            return;
+        }
+        if (user is null)
+        {
+            errorMessage = "Error: Email or password is not right.";
+            return;
+        }
+
+        var result = await SignInManager.PasswordSignInAsync(user, Input.Password, Input.RememberMe, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("User {UserId} signed in to company {Company}.", user.Id, options.CompanyCode);
+            RedirectManager.RedirectTo(ReturnUrl);
+        }
+        else if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo("Account/LoginWith2fa", new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = Input.RememberMe });
+        }
+        else if (result.IsLockedOut)
+        {
+            Logger.LogWarning("Account {UserId} locked out.", user.Id);
+            RedirectManager.RedirectTo("Account/Lockout");
+        }
+        else if (result.IsNotAllowed)
+        {
+            errorMessage = user.Status switch
+            {
+                UserStatuses.Disabled => "Error: This login has been switched off. Contact your HR team.",
+                UserStatuses.Invited => "Error: Please accept your invitation email first.",
+                _ => "Error: Please confirm your email address first (check the email we sent you).",
+            };
+        }
+        else
+        {
+            errorMessage = "Error: Email or password is not right.";
+        }
+    }
+
+    private sealed class IdentifyModel
+    {
+        [Required, EmailAddress]
+        public string Email { get; set; } = "";
+
+        public string? Company { get; set; }
+    }
+
+    private sealed class InputModel
+    {
+        public string? Company { get; set; }
+
+        [Required, EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required, DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; }
+    }
+}

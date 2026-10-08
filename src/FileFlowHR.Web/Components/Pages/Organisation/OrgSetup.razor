@@ -1,0 +1,153 @@
+@page "/organisation"
+@attribute [Authorize(Policy = Permissions.OrgManage)]
+@inherits HrComponentBase
+
+<PageTitle>Regions and units</PageTitle>
+<PageHeader Title="Regions and units" Subtitle="The building blocks positions sit in. Nothing is deleted: end dates keep history." />
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+<div class="panel">
+    <h2>Regions</h2>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>Name</th><th>Country</th><th>Time zone</th><th>Period</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var r in regions)
+                {
+                    <tr>
+                        <td>@r.Name</td><td>@r.CountryCode</td><td>@r.TimeZone</td><td>@Period(r.EffectiveFrom, r.EffectiveTo)</td>
+                        <td class="text-end"><button class="btn btn-sm btn-link" @onclick="() => EditRegion(r)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="form-grid mt-3">
+        <div><label class="form-label">Name</label><input class="form-control" @bind="region.Name" /></div>
+        <div><label class="form-label">Country code</label><input class="form-control" maxlength="2" @bind="region.CountryCode" /></div>
+        <div><label class="form-label">Time zone</label><input class="form-control" @bind="region.TimeZone" placeholder="America/New_York" /></div>
+        <div><label class="form-label">Starts</label><input type="date" class="form-control" @bind="region.EffectiveFrom" /></div>
+        <div>
+            <button class="btn btn-primary" disabled="@Busy" @onclick="SaveRegion">@(region.Id is null ? "Add region" : "Save region")</button>
+            @if (region.Id is not null) { <button class="btn btn-link" @onclick="() => region = new()">Cancel</button> }
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Business units</h2>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>Name</th><th>Region</th><th>Part of</th><th>Period</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var b in units)
+                {
+                    <tr>
+                        <td>@b.Name</td><td>@b.RegionName</td><td>@b.ParentName</td><td>@Period(b.EffectiveFrom, b.EffectiveTo)</td>
+                        <td class="text-end"><button class="btn btn-sm btn-link" @onclick="() => EditUnit(b)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="form-grid mt-3">
+        <div><label class="form-label">Name</label><input class="form-control" @bind="unit.Name" /></div>
+        <div>
+            <label class="form-label">Region</label>
+            <select class="form-select" @bind="unit.RegionId">
+                <option value="0">Choose…</option>
+                @foreach (var r in regions) { <option value="@r.Id">@r.Name</option> }
+            </select>
+        </div>
+        <div>
+            <label class="form-label">Part of (optional)</label>
+            <select class="form-select" @bind="unit.ParentId">
+                <option value="0">None</option>
+                @foreach (var b in units.Where(x => x.Id != unit.Id)) { <option value="@b.Id">@b.Name</option> }
+            </select>
+        </div>
+        <div><label class="form-label">Starts</label><input type="date" class="form-control" @bind="unit.EffectiveFrom" /></div>
+        <div>
+            <button class="btn btn-primary" disabled="@Busy" @onclick="SaveUnit">@(unit.Id is null ? "Add unit" : "Save unit")</button>
+            @if (unit.Id is not null) { <button class="btn btn-link" @onclick="() => unit = new()">Cancel</button> }
+        </div>
+    </div>
+</div>
+
+<div class="panel">
+    <h2>Locations</h2>
+    <div class="table-wrap">
+        <table class="table">
+            <thead><tr><th>Name</th><th>City</th><th>Country</th><th>Region</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var l in locations)
+                {
+                    <tr>
+                        <td>@l.Name</td><td>@l.City</td><td>@l.CountryCode</td><td>@l.RegionName</td>
+                        <td class="text-end"><button class="btn btn-sm btn-link" @onclick="() => EditLocation(l)">Edit</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <div class="form-grid mt-3">
+        <div><label class="form-label">Name</label><input class="form-control" @bind="location.Name" /></div>
+        <div><label class="form-label">City</label><input class="form-control" @bind="location.City" /></div>
+        <div><label class="form-label">Country code</label><input class="form-control" maxlength="2" @bind="location.CountryCode" /></div>
+        <div>
+            <label class="form-label">Region</label>
+            <select class="form-select" @bind="location.RegionId">
+                <option value="0">Choose…</option>
+                @foreach (var r in regions) { <option value="@r.Id">@r.Name</option> }
+            </select>
+        </div>
+        <div>
+            <button class="btn btn-primary" disabled="@Busy" @onclick="SaveLocation">@(location.Id is null ? "Add location" : "Save location")</button>
+            @if (location.Id is not null) { <button class="btn btn-link" @onclick="() => location = new()">Cancel</button> }
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<RegionDto> regions = [];
+    private IReadOnlyList<BusinessUnitDto> units = [];
+    private IReadOnlyList<LocationDto> locations = [];
+    private RegionForm region = new();
+    private UnitForm unit = new();
+    private LocationForm location = new();
+
+    private sealed class RegionForm { public long? Id; public string Name = ""; public string CountryCode = ""; public string TimeZone = ""; public DateOnly EffectiveFrom = DateOnly.FromDateTime(DateTime.Today); }
+    private sealed class UnitForm { public long? Id; public long RegionId; public long ParentId; public string Name = ""; public DateOnly EffectiveFrom = DateOnly.FromDateTime(DateTime.Today); }
+    private sealed class LocationForm { public long? Id; public long RegionId; public string Name = ""; public string? City; public string CountryCode = ""; }
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        var r = await Send(new ListRegionsQuery()); if (r.Succeeded) regions = r.Value!;
+        var b = await Send(new ListBusinessUnitsQuery()); if (b.Succeeded) units = b.Value!;
+        var l = await Send(new ListLocationsQuery()); if (l.Succeeded) locations = l.Value!;
+    }
+
+    private void EditRegion(RegionDto r) => region = new() { Id = r.Id, Name = r.Name, CountryCode = r.CountryCode, TimeZone = r.TimeZone, EffectiveFrom = r.EffectiveFrom };
+    private void EditUnit(BusinessUnitDto b) => unit = new() { Id = b.Id, RegionId = b.RegionId, ParentId = b.ParentBusinessUnitId ?? 0, Name = b.Name, EffectiveFrom = b.EffectiveFrom };
+    private void EditLocation(LocationDto l) => location = new() { Id = l.Id, RegionId = l.RegionId, Name = l.Name, City = l.City, CountryCode = l.CountryCode };
+
+    private async Task SaveRegion()
+    {
+        var result = await Send(new SaveRegionCommand(region.Id, region.Name, region.CountryCode, region.TimeZone, region.EffectiveFrom), "Region saved.");
+        if (result.Succeeded) { region = new(); await Load(); }
+    }
+
+    private async Task SaveUnit()
+    {
+        var result = await Send(new SaveBusinessUnitCommand(unit.Id, unit.RegionId, unit.ParentId == 0 ? null : unit.ParentId, unit.Name, unit.EffectiveFrom), "Business unit saved.");
+        if (result.Succeeded) { unit = new(); await Load(); }
+    }
+
+    private async Task SaveLocation()
+    {
+        var result = await Send(new SaveLocationCommand(location.Id, location.RegionId, location.Name, location.City, location.CountryCode), "Location saved.");
+        if (result.Succeeded) { location = new(); await Load(); }
+    }
+}

@@ -1,0 +1,115 @@
+@page "/positions"
+@attribute [Authorize(Policy = Permissions.OrgView)]
+@inherits HrComponentBase
+
+<PageTitle>Positions</PageTitle>
+<PageHeader Title="Positions" Subtitle="Seats in the organisation. People come and go; the position and its reporting line stay.">
+    <Actions>
+        <AuthorizeView Policy="@Permissions.OrgManage">
+            <button class="btn btn-primary" @onclick="() => showNew = !showNew">New position</button>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+@if (showNew)
+{
+    <div class="panel">
+        <h2>New position</h2>
+        <div class="form-grid">
+            <div><label class="form-label">Code</label><input class="form-control" @bind="form.Code" placeholder="QAN-002" /></div>
+            <div><label class="form-label">Title</label><input class="form-control" @bind="form.Title" /></div>
+            <div>
+                <label class="form-label">Business unit</label>
+                <select class="form-select" @bind="form.BusinessUnitId">
+                    <option value="0">Choose…</option>
+                    @foreach (var b in units) { <option value="@b.Id">@b.Name</option> }
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Location</label>
+                <select class="form-select" @bind="form.LocationId">
+                    <option value="0">None</option>
+                    @foreach (var l in locations) { <option value="@l.Id">@l.Name</option> }
+                </select>
+            </div>
+            <div>
+                <label class="form-label">Reports to</label>
+                <select class="form-select" @bind="form.ManagerPositionId">
+                    <option value="0">Nobody (top)</option>
+                    @foreach (var p in positions.Where(p => p.EffectiveTo is null)) { <option value="@p.Id">@p.Title (@p.Code)</option> }
+                </select>
+            </div>
+            <div><label class="form-label">Starts</label><input type="date" class="form-control" @bind="form.EffectiveFrom" /></div>
+        </div>
+        <div class="actions-row">
+            <button class="btn btn-primary" disabled="@Busy" @onclick="Create">Create position</button>
+            <button class="btn btn-link" @onclick="() => showNew = false">Cancel</button>
+        </div>
+    </div>
+}
+
+<div class="toolbar">
+    <input class="form-control" placeholder="Search code, title or holder" @bind="search" @bind:event="oninput" @bind:after="Load" />
+    <label class="form-label mb-0">As of</label>
+    <input type="date" class="form-control" @bind="asOf" @bind:after="Load" />
+    <div class="form-check ms-2">
+        <input class="form-check-input" type="checkbox" id="closed" @bind="includeClosed" @bind:after="Load" />
+        <label class="form-check-label" for="closed">Show closed</label>
+    </div>
+</div>
+
+<div class="panel table-wrap">
+    <table class="table table-hover">
+        <thead><tr><th>Code</th><th>Title</th><th>Holder</th><th>Reports to</th><th>Business unit</th><th>Location</th><th>Status</th></tr></thead>
+        <tbody>
+            @foreach (var p in positions)
+            {
+                <tr>
+                    <td><a href="positions/@p.Id">@p.Code</a></td>
+                    <td>@p.Title</td>
+                    <td>@(p.HolderName ?? "")</td>
+                    <td>@p.ManagerTitle</td>
+                    <td>@p.BusinessUnit</td>
+                    <td>@p.Location</td>
+                    <td><StatusBadge Text="@(p.EffectiveTo is not null ? "Closed" : p.IsVacant ? "Vacant" : "Active")" /></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (positions.Count == 0) { <p class="muted mb-0">No positions match.</p> }
+</div>
+
+@code {
+    private IReadOnlyList<PositionRow> positions = [];
+    private IReadOnlyList<BusinessUnitDto> units = [];
+    private IReadOnlyList<LocationDto> locations = [];
+    private string? search;
+    private DateOnly asOf = DateOnly.FromDateTime(DateTime.Today);
+    private bool includeClosed;
+    private bool showNew;
+    private NewPosition form = new();
+
+    private sealed class NewPosition { public string Code = ""; public string Title = ""; public long BusinessUnitId; public long LocationId; public long ManagerPositionId; public DateOnly EffectiveFrom = DateOnly.FromDateTime(DateTime.Today); }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        // Lookups are only readable with org.view, which this page already requires.
+        var b = await Send(new ListBusinessUnitsQuery()); if (b.Succeeded) units = b.Value!.Where(x => x.EffectiveTo is null).ToList();
+        var l = await Send(new ListLocationsQuery()); if (l.Succeeded) locations = l.Value!;
+    }
+
+    private async Task Load()
+    {
+        var result = await Send(new ListPositionsQuery(asOf, search, includeClosed));
+        if (result.Succeeded) positions = result.Value!;
+    }
+
+    private async Task Create()
+    {
+        var result = await Send(new SavePositionCommand(null, form.Code, form.Title, form.BusinessUnitId,
+            form.LocationId == 0 ? null : form.LocationId, form.EffectiveFrom, form.ManagerPositionId == 0 ? null : form.ManagerPositionId), "Position created.");
+        if (result.Succeeded) Navigation.NavigateTo($"positions/{result.Value}");
+    }
+}

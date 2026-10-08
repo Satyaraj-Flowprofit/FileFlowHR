@@ -1,0 +1,201 @@
+@page "/positions/{Id:long}"
+@attribute [Authorize(Policy = Permissions.OrgView)]
+@inherits HrComponentBase
+
+<PageTitle>@(detail?.Position.Title ?? "Position")</PageTitle>
+
+@if (detail is null)
+{
+    <Alerts Error="@ErrorMessage" />
+    <p class="muted">Loading…</p>
+}
+else
+{
+    var p = detail.Position;
+    <PageHeader Title="@p.Title" Subtitle="@($"{p.Code} · {p.BusinessUnit}{(p.Location is null ? "" : " · " + p.Location)}")">
+        <Actions>
+            <a class="btn btn-outline-secondary" href="positions">Back to positions</a>
+        </Actions>
+    </PageHeader>
+    <Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+    <div class="two-col">
+        <div class="panel">
+            <h2>Summary</h2>
+            <dl class="dl-grid">
+                <dt>Status</dt><dd><StatusBadge Text="@(p.EffectiveTo is not null ? "Closed" : p.IsVacant ? "Vacant" : "Active")" /></dd>
+                <dt>Held by</dt><dd>@if (p.HolderPersonId is { } holder) { <a href="people/@holder">@p.HolderName</a> } else { <span>Nobody</span> }</dd>
+                <dt>Reports to</dt><dd>@if (p.ManagerPositionId is { } m) { <a href="positions/@m">@p.ManagerTitle</a> } else { <span>Nobody (top)</span> }</dd>
+                <dt>Period</dt><dd>@Period(p.EffectiveFrom, p.EffectiveTo)</dd>
+            </dl>
+        </div>
+        <div class="panel">
+            <h2>Direct reports</h2>
+            @if (detail.DirectReports.Count == 0) { <p class="muted mb-0">None.</p> }
+            <ul class="mb-0">
+                @foreach (var r in detail.DirectReports)
+                {
+                    <li><a href="positions/@r.Id">@r.Title</a> <span class="muted">@(r.HolderName ?? "vacant")</span></li>
+                }
+            </ul>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Who held this position</h2>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Person</th><th>Type</th><th>Period</th></tr></thead>
+                <tbody>
+                    @foreach (var h in detail.Holders)
+                    {
+                        <tr><td><a href="people/@h.PersonId">@h.Name</a></td><td><StatusBadge Text="@Words(h.AssignmentType)" /></td><td>@Period(h.From, h.To)</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (detail.Holders.Count == 0) { <p class="muted mb-0">Never filled yet.</p> }
+    </div>
+
+    <div class="panel">
+        <h2>Reporting lines</h2>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Manager position</th><th>Line</th><th>Period</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var l in detail.Lines)
+                    {
+                        <tr>
+                            <td><a href="positions/@l.ManagerPositionId">@l.ManagerTitle</a></td>
+                            <td>@Words(l.LineType)</td>
+                            <td>@Period(l.From, l.To)</td>
+                            <td class="text-end">
+                                @if (l.To is null && canManage)
+                                {
+                                    <button class="btn btn-sm btn-link" @onclick="() => EndLine(l.Id)">End today</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @if (canManage && p.EffectiveTo is null)
+    {
+        <div class="two-col">
+            <div class="panel">
+                <h2>Change manager</h2>
+                <p class="muted">The old solid line ends the day before; history is kept.</p>
+                <div class="form-grid">
+                    <div>
+                        <label class="form-label">New manager position</label>
+                        <select class="form-select" @bind="managerId">
+                            <option value="0">Choose…</option>
+                            @foreach (var o in others) { <option value="@o.Id">@o.Title (@o.Code)</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Line</label>
+                        <select class="form-select" @bind="lineType">
+                            <option value="@LineType.Solid">Solid (main manager)</option>
+                            <option value="@LineType.Dotted">Dotted (second manager)</option>
+                        </select>
+                    </div>
+                    <div><label class="form-label">From</label><input type="date" class="form-control" @bind="changeFrom" /></div>
+                </div>
+                <div class="actions-row"><button class="btn btn-primary" disabled="@Busy" @onclick="ChangeManager">Save</button></div>
+            </div>
+
+            <div class="panel">
+                <h2>Edit or close</h2>
+                <div class="form-grid">
+                    <div><label class="form-label">Title</label><input class="form-control" @bind="title" /></div>
+                    <div>
+                        <label class="form-label">Business unit</label>
+                        <select class="form-select" @bind="unitId">
+                            @foreach (var b in units) { <option value="@b.Id">@b.Name</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Location</label>
+                        <select class="form-select" @bind="locationId">
+                            <option value="0">None</option>
+                            @foreach (var l in locations) { <option value="@l.Id">@l.Name</option> }
+                        </select>
+                    </div>
+                </div>
+                <div class="actions-row"><button class="btn btn-primary" disabled="@Busy" @onclick="SaveDetails">Save details</button></div>
+                <hr />
+                <div class="form-grid">
+                    <div><label class="form-label">Close on</label><input type="date" class="form-control" @bind="closeOn" /></div>
+                    <div><button class="btn btn-outline-danger" disabled="@Busy" @onclick="Close">Close position</button></div>
+                </div>
+                <p class="muted small mt-2 mb-0">Closing keeps the record. A position with someone in it cannot be closed.</p>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private PositionDetail? detail;
+    private IReadOnlyList<PositionRow> others = [];
+    private bool canManage;
+    private long managerId;
+    private LineType lineType = LineType.Solid;
+    private DateOnly changeFrom = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly closeOn = DateOnly.FromDateTime(DateTime.Today);
+    private string title = "";
+    private long unitId;
+    private long locationId;
+    private IReadOnlyList<BusinessUnitDto> units = [];
+    private IReadOnlyList<LocationDto> locations = [];
+
+    protected override async Task OnParametersSetAsync()
+    {
+        canManage = FileFlowHR.Web.Security.PermissionPolicies.Has((await AuthState).User, Permissions.OrgManage);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var result = await Send(new GetPositionQuery(Id));
+        detail = result.Succeeded ? result.Value : null;
+        if (detail is null) return;
+        title = detail.Position.Title;
+        unitId = detail.Position.BusinessUnitId;
+        if (canManage)
+        {
+            var b = await Send(new ListBusinessUnitsQuery()); if (b.Succeeded) units = b.Value!;
+            var l = await Send(new ListLocationsQuery()); if (l.Succeeded) locations = l.Value!;
+            locationId = locations.FirstOrDefault(x => x.Name == detail.Position.Location)?.Id ?? 0;
+            var list = await Send(new ListPositionsQuery());
+            if (list.Succeeded) others = list.Value!.Where(o => o.Id != Id).ToList();
+        }
+    }
+
+    private async Task ChangeManager()
+    {
+        if ((await Send(new ChangeManagerCommand(Id, managerId, lineType, changeFrom), "Manager changed.")).Succeeded) await Load();
+    }
+
+    private async Task EndLine(long lineId)
+    {
+        if ((await Send(new EndReportingLineCommand(lineId, DateOnly.FromDateTime(DateTime.Today)), "Reporting line ended.")).Succeeded) await Load();
+    }
+
+    private async Task SaveDetails()
+    {
+        var p = detail!.Position;
+        if ((await Send(new SavePositionCommand(Id, p.Code, title, unitId, locationId == 0 ? null : locationId, p.EffectiveFrom, null), "Position saved.")).Succeeded) await Load();
+    }
+
+    private async Task Close()
+    {
+        if ((await Send(new ClosePositionCommand(Id, closeOn), "Position closed.")).Succeeded) await Load();
+    }
+}

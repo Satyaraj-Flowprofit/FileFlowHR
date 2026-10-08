@@ -1,0 +1,47 @@
+@page "/my-applications"
+@attribute [Authorize(Policy = Permissions.OwnApplications)]
+@inherits HrComponentBase
+
+<PageTitle>My applications</PageTitle>
+<PageHeader Title="My applications" />
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+<div class="panel table-wrap">
+    <table class="table">
+        <thead><tr><th>Job</th><th>Applied</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var a in applications)
+            {
+                <tr>
+                    <td>@a.JobTitle</td>
+                    <td>@Date(a.AppliedAt)</td>
+                    <td><StatusBadge Text="@a.Status.ToString()" /></td>
+                    <td class="text-end">
+                        @if (a.CanWithdraw)
+                        {
+                            <button class="btn btn-sm btn-outline-danger" disabled="@Busy" @onclick="() => Withdraw(a.Id)">Withdraw</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (applications.Count == 0) { <p class="muted mb-0">You have not applied for anything yet.</p> }
+</div>
+
+@code {
+    private IReadOnlyList<MyApplicationDto> applications = [];
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        var result = await Send(new ListMyApplicationsQuery());
+        if (result.Succeeded) applications = result.Value!;
+    }
+
+    private async Task Withdraw(long id)
+    {
+        if ((await Send(new WithdrawApplicationCommand(id), "Application withdrawn.")).Succeeded) await Load();
+    }
+}

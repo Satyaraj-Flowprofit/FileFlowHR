@@ -1,0 +1,106 @@
+@page "/Account/AcceptInvitation"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using FileFlowHR.Infrastructure.Identity
+
+@inject IdentityRedirectManager RedirectManager
+@inject UserManager<UserAccount> UserManager
+
+<PageTitle>Accept your invitation</PageTitle>
+
+<div class="auth-card">
+    <h1 class="h3">Welcome to FileFlowHR</h1>
+    <p class="text-secondary">Choose a password for <strong>@email</strong>. You will use it with your email to sign in.</p>
+    <StatusMessage Message="@message" />
+    <EditForm Model="Input" FormName="accept-invitation" OnValidSubmit="OnValidSubmitAsync" method="post">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" role="alert" />
+        <input type="hidden" name="Input.Code" value="@Input.Code" />
+        <input type="hidden" name="Input.UserId" value="@Input.UserId" />
+        <PasswordFields Password="@Input.Password" ConfirmPassword="@Input.ConfirmPassword" />
+        <button type="submit" class="w-100 btn btn-lg btn-primary">Set password and continue</button>
+    </EditForm>
+</div>
+
+@code {
+    private string? message;
+    private string? email;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? Code { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? UserId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            if (Code is null || UserId is null)
+            {
+                RedirectManager.RedirectTo("Account/InvalidPasswordReset");
+                return;
+            }
+            Input.Code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
+            Input.UserId = UserId;
+        }
+        var user = await UserManager.FindByIdAsync(Input.UserId);
+        if (user is null || user.Status != UserStatuses.Invited)
+        {
+            RedirectManager.RedirectToWithStatus("Account/Login", "This invitation has already been used. Please sign in.", HttpContext);
+            return;
+        }
+        email = user.Email;
+    }
+
+    private async Task OnValidSubmitAsync()
+    {
+        var user = await UserManager.FindByIdAsync(Input.UserId);
+        if (user is null || user.Status != UserStatuses.Invited)
+        {
+            RedirectManager.RedirectTo("Account/Login");
+            return;
+        }
+
+        // The invitation link is a password-reset token, so it proves the person owns the email.
+        var result = await UserManager.ResetPasswordAsync(user, Input.Code, Input.Password);
+        if (!result.Succeeded)
+        {
+            message = $"Error: {string.Join(" ", result.Errors.Select(e => e.Description))}";
+            return;
+        }
+
+        user.EmailConfirmed = true;
+        user.Status = UserStatuses.Active;
+        await UserManager.UpdateAsync(user);
+        var companyCode = user.UserName!.Split(':')[0];
+        RedirectManager.RedirectToWithStatus($"Account/Login?company={companyCode}", "Your password is set. Please sign in.", HttpContext);
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        public string UserId { get; set; } = "";
+
+        [Required]
+        public string Code { get; set; } = "";
+
+        [Required, StringLength(100, MinimumLength = 10, ErrorMessage = "Use at least 10 characters.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [DataType(DataType.Password)]
+        [Compare("Password", ErrorMessage = "The two passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

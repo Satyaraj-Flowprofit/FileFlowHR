@@ -1,0 +1,51 @@
+@using FileFlowHR.Application.Common.Security
+@inject IWebHostEnvironment Environment
+
+<nav class="side-nav">
+    <NavLink class="side-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+
+    <AuthorizeView Policy="@Permissions.OrgView">
+        <div class="side-section">Organisation</div>
+        <NavLink class="side-link" href="org-chart">Org chart</NavLink>
+        <NavLink class="side-link" href="positions">Positions</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.OrgManage">
+        <NavLink class="side-link" href="organisation">Regions and units</NavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.PeopleView">
+        <div class="side-section">People</div>
+        <NavLink class="side-link" href="people">People</NavLink>
+    </AuthorizeView>
+
+    <AuthorizeView Policy="@Permissions.PostingsManage">
+        <div class="side-section">Recruitment</div>
+        <NavLink class="side-link" href="postings">Job postings</NavLink>
+    </AuthorizeView>
+
+    <div class="side-section">Me</div>
+    <AuthorizeView Policy="@Permissions.JobsBrowse">
+        <NavLink class="side-link" href="jobs">Find jobs</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.OwnApplications">
+        <NavLink class="side-link" href="my-applications">My applications</NavLink>
+    </AuthorizeView>
+    <NavLink class="side-link" href="Account/Manage">My sign-in</NavLink>
+
+    <AuthorizeView Policy="@Permissions.UsersManage">
+        <div class="side-section">Administration</div>
+        <NavLink class="side-link" href="admin/users">Users</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.RolesManage">
+        <NavLink class="side-link" href="admin/roles">Roles</NavLink>
+    </AuthorizeView>
+    <AuthorizeView Policy="@Permissions.SettingsManage">
+        <NavLink class="side-link" href="admin/sign-in">Sign-in settings</NavLink>
+    </AuthorizeView>
+
+    @if (Environment.IsDevelopment())
+    {
+        <div class="side-section">Local only</div>
+        <NavLink class="side-link" href="dev/mailbox">Email outbox</NavLink>
+    }
+</nav>

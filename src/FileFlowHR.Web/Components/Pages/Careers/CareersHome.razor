@@ -1,0 +1,39 @@
+@page "/careers/{Company}"
+@inherits HrComponentBase
+
+<PageTitle>@(careers?.CompanyName ?? "Careers")</PageTitle>
+
+@if (careers is null)
+{
+    <h1>Careers</h1>
+    <p class="muted">@(ErrorMessage ?? "This company was not found.")</p>
+}
+else
+{
+    <PageHeader Title="@($"Careers at {careers.CompanyName}")" Subtitle="Open jobs. Anyone can apply.">
+        <Actions>
+            <a class="btn btn-outline-primary" href="careers/@careers.CompanyCode/register">Create an account</a>
+            <a class="btn btn-outline-secondary" href="Account/Login?company=@careers.CompanyCode">Sign in</a>
+        </Actions>
+    </PageHeader>
+
+    @if (careers.Jobs.Count == 0) { <p class="muted">No open jobs right now. Please check back soon.</p> }
+    @foreach (var job in careers.Jobs)
+    {
+        <div class="job-card">
+            <h3><a href="careers/@careers.CompanyCode/jobs/@job.Id">@job.Title</a></h3>
+            <div class="muted small">@job.BusinessUnit@(job.Location is null ? "" : " · " + job.Location) · posted @Date(job.OpenDate)@(job.CloseDate is null ? "" : " · closes " + Date(job.CloseDate))</div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Company { get; set; } = "";
+    private CareersPage? careers;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Send(new GetCareersPageQuery(Company));
+        careers = result.Succeeded ? result.Value : null;
+    }
+}

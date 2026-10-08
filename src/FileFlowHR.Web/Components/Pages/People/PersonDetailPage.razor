@@ -1,0 +1,227 @@
+@page "/people/{Id:long}"
+@attribute [Authorize(Policy = Permissions.PeopleView)]
+@inherits HrComponentBase
+
+<PageTitle>@(person is null ? "Person" : $"{person.FirstName} {person.LastName}")</PageTitle>
+
+@if (person is null)
+{
+    <Alerts Error="@ErrorMessage" />
+    <p class="muted">Loading…</p>
+}
+else
+{
+    <PageHeader Title="@($"{person.FirstName} {person.LastName}")" Subtitle="@($"{person.PersonNumber}{(person.Email is null ? "" : " · " + person.Email)}")">
+        <Actions><a class="btn btn-outline-secondary" href="people">Back to people</a></Actions>
+    </PageHeader>
+    <Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+    <div class="two-col">
+        <div class="panel">
+            <h2>Details</h2>
+            @if (person.CanManage)
+            {
+                <div class="form-grid">
+                    <div><label class="form-label">First name</label><input class="form-control" @bind="first" /></div>
+                    <div><label class="form-label">Last name</label><input class="form-control" @bind="last" /></div>
+                    <div><label class="form-label">Email</label><input type="email" class="form-control" @bind="email" /></div>
+                    <div><label class="form-label">Phone</label><input class="form-control" @bind="phone" /></div>
+                </div>
+                <div class="actions-row"><button class="btn btn-primary" disabled="@Busy" @onclick="SaveDetails">Save details</button></div>
+            }
+            else
+            {
+                <dl class="dl-grid">
+                    <dt>Email</dt><dd>@person.Email</dd>
+                    <dt>Phone</dt><dd>@person.Phone</dd>
+                </dl>
+            }
+        </div>
+
+        <div class="panel">
+            <h2>Sign-in</h2>
+            @if (person.Login is { } login)
+            {
+                <dl class="dl-grid">
+                    <dt>Email</dt><dd>@login.Email</dd>
+                    <dt>Type</dt><dd>@(login.IsExternal ? "Applicant (external)" : "Staff (internal)")</dd>
+                    <dt>Status</dt><dd><StatusBadge Text="@Words(login.Status)" /></dd>
+                    <dt>Signs in with</dt><dd>@SignInMethod(login)</dd>
+                    <dt>Last sign-in</dt><dd>@(login.LastSignInAt is null ? "Never" : Date(login.LastSignInAt))</dd>
+                </dl>
+            }
+            else
+            {
+                <p class="muted">No login yet.</p>
+                <AuthorizeView Policy="@Permissions.UsersManage" Context="_">
+                    @if (person.Email is not null)
+                    {
+                        <button class="btn btn-outline-primary" disabled="@Busy" @onclick="Invite">Invite to sign in</button>
+                        <p class="muted small mt-2 mb-0">They get an email with a link to set a password, or they can use the company login if one is set up.</p>
+                    }
+                    else
+                    {
+                        <p class="muted small mb-0">Add an email address to invite them.</p>
+                    }
+                </AuthorizeView>
+            }
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Employment</h2>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Type</th><th>Hired</th><th>Left</th></tr></thead>
+                <tbody>
+                    @foreach (var e in person.Employments)
+                    {
+                        <tr><td>@Words(e.EmploymentType)</td><td>@Date(e.HireDate)</td><td>@Date(e.TerminationDate)</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (person.Employments.Count == 0) { <p class="muted">Never employed.</p> }
+
+        @if (person.CanManage)
+        {
+            @if (!person.IsEmployee)
+            {
+                <h2 class="mt-3">Hire</h2>
+                <div class="form-grid">
+                    <div>
+                        <label class="form-label">Into position</label>
+                        <select class="form-select" @bind="positionId">
+                            <option value="0">Choose a vacant position…</option>
+                            @foreach (var p in vacant) { <option value="@p.Id">@p.Title (@p.Code)</option> }
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">Type</label>
+                        <select class="form-select" @bind="employmentType">
+                            @foreach (var t in Enum.GetValues<EmploymentType>()) { <option value="@t">@Words(t)</option> }
+                        </select>
+                    </div>
+                    <div><label class="form-label">Start date</label><input type="date" class="form-control" @bind="startDate" /></div>
+                    <div><button class="btn btn-primary" disabled="@Busy" @onclick="Hire">Hire</button></div>
+                </div>
+            }
+            else
+            {
+                <div class="form-grid mt-3">
+                    <div><label class="form-label">Leaving date</label><input type="date" class="form-control" @bind="leaveDate" /></div>
+                    <div><button class="btn btn-outline-danger" disabled="@Busy" @onclick="Terminate">End employment</button></div>
+                </div>
+                <p class="muted small mt-2 mb-0">Ends their positions on the same date and disables their staff login.</p>
+            }
+        }
+    </div>
+
+    <div class="panel">
+        <h2>Positions held</h2>
+        <div class="table-wrap">
+            <table class="table">
+                <thead><tr><th>Position</th><th>Type</th><th>Period</th></tr></thead>
+                <tbody>
+                    @foreach (var a in person.Assignments)
+                    {
+                        <tr><td><a href="positions/@a.PositionId">@a.PositionTitle</a> <span class="muted">@a.PositionCode</span></td><td><StatusBadge Text="@Words(a.AssignmentType)" /></td><td>@Period(a.From, a.To)</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (person.CanManage && person.IsEmployee)
+        {
+            <h2 class="mt-3">Move or cover</h2>
+            <div class="form-grid">
+                <div>
+                    <label class="form-label">Position</label>
+                    <select class="form-select" @bind="assignPositionId">
+                        <option value="0">Choose…</option>
+                        @foreach (var p in vacant) { <option value="@p.Id">@p.Title (@p.Code)</option> }
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Type</label>
+                    <select class="form-select" @bind="assignmentType">
+                        <option value="@AssignmentType.Primary">Primary (move)</option>
+                        <option value="@AssignmentType.Interim">Interim (cover)</option>
+                    </select>
+                </div>
+                <div><label class="form-label">From</label><input type="date" class="form-control" @bind="assignFrom" /></div>
+                <div><label class="form-label">To (interim only)</label><input type="date" class="form-control" @bind="assignTo" /></div>
+                <div><button class="btn btn-primary" disabled="@Busy" @onclick="Assign">Save</button></div>
+            </div>
+        }
+    </div>
+
+    <div class="two-col">
+        <div class="panel">
+            <h2>Applications</h2>
+            @if (person.Applications.Count == 0) { <p class="muted mb-0">None.</p> }
+            <ul class="mb-0">
+                @foreach (var a in person.Applications)
+                {
+                    <li>@a.PostingTitle <StatusBadge Text="@Words(a.Status)" /> <span class="muted small">@Words(a.Source), @Date(a.AppliedAt)</span></li>
+                }
+            </ul>
+        </div>
+        <div class="panel">
+            <h2>Granted roles</h2>
+            @if (person.Roles.Count == 0) { <p class="muted mb-0">None. Employee, manager and applicant access comes automatically.</p> }
+            <ul class="mb-0">
+                @foreach (var r in person.Roles)
+                {
+                    <li>@r.Role <span class="muted">for @r.Scope, @Period(r.From, r.To)</span></li>
+                }
+            </ul>
+            <AuthorizeView Policy="@Permissions.RolesManage" Context="_">
+                <a class="btn btn-sm btn-link px-0 mt-2" href="admin/roles">Manage roles</a>
+            </AuthorizeView>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private PersonDetail? person;
+    private IReadOnlyList<PositionRow> vacant = [];
+    private string first = "", last = "";
+    private string? email, phone;
+    private long positionId, assignPositionId;
+    private EmploymentType employmentType = EmploymentType.FullTime;
+    private AssignmentType assignmentType = AssignmentType.Primary;
+    private DateOnly startDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly leaveDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly assignFrom = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? assignTo;
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        var result = await Send(new GetPersonQuery(Id));
+        person = result.Succeeded ? result.Value : null;
+        if (person is null) return;
+        (first, last, email, phone) = (person.FirstName, person.LastName, person.Email, person.Phone);
+        if (person.CanManage)
+        {
+            var positions = await Send(new ListPositionsQuery());
+            if (positions.Succeeded) vacant = positions.Value!.Where(p => p.IsVacant).ToList();
+        }
+    }
+
+    private static string SignInMethod(UserAccountDto login) =>
+        string.Join(" or ", new[] { login.HasPassword ? "password" : null, login.HasCompanyLogin ? "company login" : null }.OfType<string>()) is { Length: > 0 } s
+            ? s + (login.TwoFactorEnabled ? " + authenticator app" : "")
+            : "not set up yet (invitation sent)";
+
+    private async Task Reload(FileFlowHR.Application.Common.IResult result) { if (result.Succeeded) await Load(); }
+
+    private async Task SaveDetails() => await Reload((await Send(new SavePersonCommand(Id, first, last, email, phone), "Details saved.")));
+    private async Task Invite() => await Reload(await Send(new InviteUserCommand(Id), "Invitation sent. Locally it appears in the email outbox."));
+    private async Task Hire() => await Reload(await Send(new HirePersonCommand(Id, positionId, startDate, employmentType), "Hired."));
+    private async Task Terminate() => await Reload(await Send(new TerminateEmploymentCommand(Id, leaveDate), "Employment ended."));
+    private async Task Assign() => await Reload(await Send(new AssignPositionCommand(Id, assignPositionId, assignmentType, assignFrom, assignmentType == AssignmentType.Interim ? assignTo : null), "Position saved."));
+}

@@ -1,0 +1,63 @@
+@page "/admin/users"
+@attribute [Authorize(Policy = Permissions.UsersManage)]
+@inherits HrComponentBase
+
+<PageTitle>Users</PageTitle>
+<PageHeader Title="Users" Subtitle="Everyone who can sign in to this company. Invite staff from their person page." />
+<Alerts Error="@ErrorMessage" Success="@SuccessMessage" />
+
+<div class="panel table-wrap">
+    <table class="table">
+        <thead><tr><th>Person</th><th>Email</th><th>Type</th><th>Signs in with</th><th>Last sign-in</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var u in users)
+            {
+                var a = u.Account;
+                <tr>
+                    <td>@if (a.PersonId is { } pid) { <a href="people/@pid">@u.PersonName</a> }</td>
+                    <td>@a.Email</td>
+                    <td>@(a.IsExternal ? "Applicant" : "Staff")</td>
+                    <td>
+                        @(string.Join(", ", new[] { a.HasPassword ? "Password" : null, a.HasCompanyLogin ? "Company login" : null }.OfType<string>()))
+                        @if (a.TwoFactorEnabled) { <span class="muted small"> + MFA</span> }
+                    </td>
+                    <td>@(a.LastSignInAt is null ? "Never" : Date(a.LastSignInAt))</td>
+                    <td><StatusBadge Text="@Words(a.Status)" /></td>
+                    <td class="text-end text-nowrap">
+                        @if (a.Status.Equals("invited", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <button class="btn btn-sm btn-link" disabled="@Busy" @onclick="() => Resend(a.UserAccountId)">Resend invite</button>
+                        }
+                        @if (a.Status.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+                        {
+                            <button class="btn btn-sm btn-outline-success" disabled="@Busy" @onclick="() => SetEnabled(a.UserAccountId, true)">Enable</button>
+                        }
+                        else
+                        {
+                            <button class="btn btn-sm btn-outline-danger" disabled="@Busy" @onclick="() => SetEnabled(a.UserAccountId, false)">Disable</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private IReadOnlyList<UserRow> users = [];
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        var result = await Send(new ListUsersQuery());
+        if (result.Succeeded) users = result.Value!;
+    }
+
+    private async Task SetEnabled(long id, bool enabled)
+    {
+        if ((await Send(new SetUserEnabledCommand(id, enabled), enabled ? "Login enabled." : "Login disabled. They are signed out within 10 minutes.")).Succeeded) await Load();
+    }
+
+    private async Task Resend(long id) => await Send(new ResendInvitationCommand(id), "Invitation sent again.");
+}
