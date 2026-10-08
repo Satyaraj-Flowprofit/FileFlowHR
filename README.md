@@ -22,7 +22,7 @@ its own login system.
 3. First start creates the `FileFlowHR` database (migrations) and loads demo data for two companies.
 4. The browser opens at https://localhost:7180.
 
-Using a full SQL Server instead? Change `ConnectionStrings:FileFlowHR` in `src/FileFlowHR.Web/appsettings.json`.
+Using a full SQL Server instead? Copy `src/FileFlowHR.Web/appsettings.Development.json.example` to `appsettings.Development.json` (git-ignored, so your credentials stay out of the repo) and set `ConnectionStrings:FileFlowHR` there.
 
 ### Option B: No SQL Server (SQLite file)
 
@@ -51,14 +51,14 @@ The tests use the real wiring on an in-memory SQLite database. No SQL Server nee
 
 ## 2. Try it
 
-The password for every demo account is `FileFlowHR#2026`. On the sign-in page, pick the company first.
+The password for every demo account is `FileFlowHR#2026`. On the sign-in page, enter the email; the company is found from it.
 
 | Company | Email | Who | What to try |
 |---|---|---|---|
 | Acme | priya.nair@acme.com | HR Manager, client admin | Everything: org chart, hire, invite, roles, sign-in settings |
 | Acme | sara.kim@acme.com | Sales Manager, recruiter for Engineering | Sees only Engineering postings |
 | Acme | david.chen@acme.com | VP Operations, auditor for US East | Read-only within US East |
-| Acme | ravi.kumar@gmail.com | Software Engineer | Own record, internal jobs, apply |
+| Acme | ravi.kumar@gmail.com | Software Engineer | Own record, find jobs, apply |
 | Acme | tom.baker@outlook.com | Applicant | My applications |
 | Acme | linda.park@gmail.com | Former employee | Sign-in is refused (login disabled) |
 | Globex | jane.doe@globex.com | Admin | Sees only Globex data |
@@ -92,7 +92,7 @@ Each company chooses, in **Admin → Sign-in settings** (table `CompanyLoginProv
 
 User names are `companycode:email`, so the same email can exist at two companies.
 
-Locally you pick the company on the sign-in page. In production it would come from the web address
+The sign-in page asks for the email first and works out the company from it: a company login that claims the email domain (jane@globex.com finds Globex), otherwise the companies where that account exists (applicants on gmail.com). If one email is registered at several companies, a short picker appears. Links from careers pages (`?company=acme`) skip this step. A company can also come from the web address
 (`acme.fileflowhr.com`).
 
 ---
@@ -140,7 +140,7 @@ Dependencies point inwards: Web → Application → Domain; Infrastructure imple
 
 Roles are fixed in code (`Application/Common/Security/Permissions.cs`). Only grants are stored (`RoleGrant`).
 
-- Automatic: **employee** (own record, internal jobs), **manager** (their team), **applicant** (own applications).
+- Automatic: **employee** (own record, find jobs), **manager** (their team), **applicant** (own applications).
 - Granted: **client admin**, **HR admin**, **recruiter**, **auditor**, each for the whole company, one region or one business unit.
 - Role changes apply at the user's next sign-in.
 
